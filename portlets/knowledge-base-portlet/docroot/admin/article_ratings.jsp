@@ -19,7 +19,7 @@
 <%
 KBArticle kbArticle = (KBArticle)request.getAttribute(WebKeys.KNOWLEDGE_BASE_KB_ARTICLE);
 
-boolean hasUpdatePermission = KBArticlePermission.contains(permissionChecker, kbArticle, ActionKeys.UPDATE);
+boolean showAdminSuggestionView = SuggestionPermission.contains(permissionChecker, scopeGroupId, kbArticle, ActionKeys.VIEW_SUGGESTIONS);
 %>
 
 <c:if test="<%= enableKBArticleRatings %>">
@@ -28,7 +28,7 @@ boolean hasUpdatePermission = KBArticlePermission.contains(permissionChecker, kb
 	int kbCommentsCount = 0;
 	int pendingKBCommentsCount = 0;
 
-	if (hasUpdatePermission) {
+	if (showAdminSuggestionView) {
 		kbCommentsCount = KBCommentLocalServiceUtil.getKBCommentsCount(KBArticle.class.getName(), kbArticle.getClassPK());
 
 		pendingKBCommentsCount = KBCommentLocalServiceUtil.getKBCommentsCount(KBArticle.class.getName(), kbArticle.getClassPK(), new int[]{KBCommentConstants.STATUS_IN_PROGRESS, KBCommentConstants.STATUS_NEW});
@@ -46,8 +46,8 @@ boolean hasUpdatePermission = KBArticlePermission.contains(permissionChecker, kb
 	/>
 
 	<c:if test='<%= kbArticleRatingsType.equals("thumbs") && themeDisplay.isSignedIn() %>'>
-		<div class="kb-article-feedback-actions" id="<portlet:namespace />additionalFeedbackActionsContainer">
-			<a data-show-node-id="<portlet:namespace />feedbackContainer" href="javascript:void(0)">
+		<div class="kb-article-suggestion-actions" id="<portlet:namespace />additionalSuggestionActionsContainer">
+			<a data-show-node-id="<portlet:namespace />suggestionContainer" href="javascript:void(0)">
 				<liferay-ui:message key="do-you-have-any-suggestions" />
 			</a>
 
@@ -57,7 +57,7 @@ boolean hasUpdatePermission = KBArticlePermission.contains(permissionChecker, kb
 
 					<a data-show-node-id="<portlet:namespace />previousCommentsContainer" href="javascript:void(0)">
 						<c:choose>
-							<c:when test="<%= hasUpdatePermission %>">
+							<c:when test="<%= showAdminSuggestionView %>">
 								<liferay-ui:message key="there-is-one-suggestion" />
 
 								<c:if test="<%= pendingKBCommentsCount > 0 %>">
@@ -75,7 +75,7 @@ boolean hasUpdatePermission = KBArticlePermission.contains(permissionChecker, kb
 
 					<a data-show-node-id="<portlet:namespace />previousCommentsContainer" href="javascript:void(0)">
 						<c:choose>
-							<c:when test="<%= hasUpdatePermission %>">
+							<c:when test="<%= showAdminSuggestionView %>">
 								<liferay-ui:message arguments="<%= kbCommentsCount %>" key="there-are-x-suggestions" />
 
 								<c:if test="<%= pendingKBCommentsCount > 0 %>">
@@ -91,14 +91,37 @@ boolean hasUpdatePermission = KBArticlePermission.contains(permissionChecker, kb
 			</c:choose>
 		</div>
 
-		<a name="kbFeedback"></a>
+		<a name="kbSuggestions"></a>
 
-		<div class="hide kb-article-feedback" id="<portlet:namespace />feedbackContainer">
-			<liferay-portlet:actionURL name="updateKBComment" var="updateKBCommentURL">
+		<div class="hide kb-article-suggestion" id="<portlet:namespace />suggestionContainer">
+			<liferay-portlet:renderURL var="viewKBArticle">
 				<portlet:param name="expanded" value="true" />
+
+				<c:choose>
+					<c:when test="<%= Validator.isNotNull(kbArticle.getUrlTitle()) %>">
+						<portlet:param name="urlTitle" value="<%= kbArticle.getUrlTitle() %>" />
+
+						<c:if test="<%= kbArticle.getKbFolderId() != KBFolderConstants.DEFAULT_PARENT_FOLDER_ID %>">
+
+							<%
+							KBFolder kbFolder = KBFolderServiceUtil.getKBFolder(kbArticle.getKbFolderId());
+							%>
+
+							<portlet:param name="kbFolderUrlTitle" value="<%= kbFolder.getUrlTitle() %>" />
+						</c:if>
+					</c:when>
+					<c:otherwise>
+						<portlet:param name="resourceClassNameId" value="<%= String.valueOf(kbArticle.getClassNameId()) %>" />
+						<portlet:param name="resourcePrimKey" value="<%= String.valueOf(kbArticle.getResourcePrimKey()) %>" />
+					</c:otherwise>
+				</c:choose>
+			</liferay-portlet:renderURL>
+
+			<liferay-portlet:actionURL name="updateKBComment" var="updateKBCommentURL">
+				<portlet:param name="redirect" value="<%= viewKBArticle %>" />
 			</liferay-portlet:actionURL>
 
-			<aui:form action='<%= updateKBCommentURL + "#kbFeedback" %>' method="post" name="feedbackFm">
+			<aui:form action='<%= updateKBCommentURL + "#kbSuggestions" %>' method="post" name="suggestionFm">
 				<aui:input name="<%= Constants.CMD %>" type="hidden" value="<%= Constants.ADD %>" />
 				<aui:input name="classNameId" type="hidden" value="<%= PortalUtil.getClassNameId(KBArticle.class) %>" />
 				<aui:input name="classPK" type="hidden" value="<%= kbArticle.getResourcePrimKey() %>" />
@@ -119,25 +142,25 @@ boolean hasUpdatePermission = KBArticlePermission.contains(permissionChecker, kb
 					<aui:button-row cssClass="kb-submit-buttons">
 						<aui:button type="submit" value="submit" />
 
-						<aui:button name="cancelFeedback" value="cancel" />
+						<aui:button name="cancelSuggestion" value="cancel" />
 					</aui:button-row>
 				</aui:fieldset>
 			</aui:form>
 		</div>
 
 		<liferay-ui:success
-			key="feedbackDeleted"
-			message="feedback-deleted-successfully"
+			key="suggestionDeleted"
+			message="suggestion-deleted-successfully"
 		/>
 
 		<liferay-ui:success
-			key="feedbackStatusUpdated"
-			message="feedback-status-updated-successfully"
+			key="suggestionStatusUpdated"
+			message="suggestion-status-updated-successfully"
 		/>
 
 		<liferay-ui:success
-			key="feedbackSaved"
-			message="feedback-saved-successfully"
+			key="suggestionSaved"
+			message="suggestion-saved-successfully"
 		/>
 
 		<%
@@ -145,18 +168,18 @@ boolean hasUpdatePermission = KBArticlePermission.contains(permissionChecker, kb
 		%>
 
 		<c:choose>
-			<c:when test="<%= hasUpdatePermission %>">
+			<c:when test="<%= showAdminSuggestionView %>">
 
 				<%
-				String navItem = ParamUtil.getString(request, "navItem", "viewNewFeedback");
+				String navItem = ParamUtil.getString(request, "navItem", "viewNewSuggestions");
 
-				KBFeedbackListDisplayContext kbFeedbackListDisplayContext = new KBFeedbackListDisplayContext(kbArticle, navItem);
+				KBSuggestionListDisplayContext kbSuggestionListDisplayContext = new KBSuggestionListDisplayContext(kbArticle, navItem);
 
-				request.setAttribute(WebKeys.KB_FEEDBACK_LIST_DISPLAY_CONTEXT, kbFeedbackListDisplayContext);
+				request.setAttribute(WebKeys.KNOWLEDGE_BASE_KB_SUGGESTION_LIST_DISPLAY_CONTEXT, kbSuggestionListDisplayContext);
 				%>
 
 				<div class='kb-article-previous-comments <%= expanded ? StringPool.BLANK : "hide" %>' id="<portlet:namespace />previousCommentsContainer">
-					<liferay-util:include page="/admin/common/view_feedback_by_status.jsp" servletContext="<%= application %>" />
+					<liferay-util:include page="/admin/common/view_suggestions_by_status.jsp" servletContext="<%= application %>" />
 				</div>
 			</c:when>
 			<c:otherwise>
@@ -170,22 +193,11 @@ boolean hasUpdatePermission = KBArticlePermission.contains(permissionChecker, kb
 							emptyResultsMessage="no-comments-found"
 							iteratorURL="<%= iteratorURL %>"
 							orderByComparator='<%= KnowledgeBaseUtil.getKBCommentOrderByComparator("modified-date", "desc") %>'
+							total="<%= kbCommentsCount %>"
 						>
 
-							<%
-							List<KBComment> kbComments = null;
-
-							if (hasUpdatePermission) {
-								kbComments = KBCommentLocalServiceUtil.getKBComments(KBArticle.class.getName(), kbArticle.getClassPK(), searchContainer.getStart(), searchContainer.getEnd(), searchContainer.getOrderByComparator());
-							}
-							else {
-								kbComments = KBCommentLocalServiceUtil.getKBComments(themeDisplay.getUserId(), KBArticle.class.getName(), kbArticle.getClassPK(), searchContainer.getStart(), searchContainer.getEnd(), searchContainer.getOrderByComparator());
-							}
-							%>
-
 							<liferay-ui:search-container-results
-								results="<%= kbComments %>"
-								total="<%= kbCommentsCount %>"
+								results="<%= KBCommentLocalServiceUtil.getKBComments(themeDisplay.getUserId(), KBArticle.class.getName(), kbArticle.getClassPK(), searchContainer.getStart(), searchContainer.getEnd(), searchContainer.getOrderByComparator()) %>"
 							/>
 
 							<liferay-ui:search-container-row
@@ -224,9 +236,9 @@ boolean hasUpdatePermission = KBArticlePermission.contains(permissionChecker, kb
 		</c:choose>
 
 		<aui:script use="aui-base">
-			var feedbackFm = A.one('#<portlet:namespace />feedbackFm');
+			var suggestionFm = A.one('#<portlet:namespace />suggestionFm');
 
-			feedbackFm.on(
+			suggestionFm.on(
 				'submit',
 				function(event) {
 					var ratingThumb = A.one('.kb-article-container input[name="<portlet:namespace />ratingThumb"]');
@@ -241,14 +253,14 @@ boolean hasUpdatePermission = KBArticlePermission.contains(permissionChecker, kb
 				}
 			);
 
-			A.one('#<portlet:namespace />additionalFeedbackActionsContainer').delegate(
+			A.one('#<portlet:namespace />additionalSuggestionActionsContainer').delegate(
 				'click',
 				function(event) {
 					var showNode = A.one('#' + event.currentTarget.getData('show-node-id'));
 
 					showNode.toggleView();
 
-					var content = showNode.one('#content');
+					var content = showNode.one('#<portlet:namespace />content');
 
 					if (content) {
 						content.focus();
@@ -257,22 +269,18 @@ boolean hasUpdatePermission = KBArticlePermission.contains(permissionChecker, kb
 				'a'
 			);
 
-			A.one('#<portlet:namespace />cancelFeedback').on(
+			A.one('#<portlet:namespace />cancelSuggestion').on(
 				'click',
 				function(event) {
-					this.each(
-						function(node) {
-							var container = node.ancestor('#<portlet:namespace />feedbackContainer');
+					var container = this.ancestor('#<portlet:namespace />suggestionContainer');
 
-							container.hide();
+					container.hide();
 
-							var content = container.one('#content');
+					var content = container.one('#<portlet:namespace />content');
 
-							if (content) {
-								content.val('');
-							}
-						}
-					);
+					if (content) {
+						content.val('');
+					}
 				}
 			);
 		</aui:script>

@@ -19,19 +19,30 @@ import com.liferay.io.delta.ByteChannelWriter;
 import com.liferay.io.delta.DeltaUtil;
 import com.liferay.portal.kernel.exception.PortalException;
 import com.liferay.portal.kernel.exception.SystemException;
+import com.liferay.portal.kernel.json.JSONFactoryUtil;
+import com.liferay.portal.kernel.json.JSONObject;
 import com.liferay.portal.kernel.repository.model.FileEntry;
 import com.liferay.portal.kernel.repository.model.Folder;
+import com.liferay.portal.kernel.util.ClassUtil;
 import com.liferay.portal.kernel.util.Digester;
 import com.liferay.portal.kernel.util.DigesterUtil;
 import com.liferay.portal.kernel.util.FileUtil;
+import com.liferay.portal.kernel.util.GetterUtil;
 import com.liferay.portal.kernel.util.StreamUtil;
+import com.liferay.portal.kernel.util.StringBundler;
 import com.liferay.portal.kernel.util.StringPool;
+import com.liferay.portal.kernel.util.StringUtil;
+import com.liferay.portal.kernel.util.Validator;
+import com.liferay.portal.model.Group;
 import com.liferay.portal.model.Lock;
+import com.liferay.portal.service.GroupLocalServiceUtil;
+import com.liferay.portlet.documentlibrary.NoSuchFileVersionException;
 import com.liferay.portlet.documentlibrary.model.DLFileEntry;
 import com.liferay.portlet.documentlibrary.model.DLFileEntryConstants;
 import com.liferay.portlet.documentlibrary.model.DLFileVersion;
 import com.liferay.portlet.documentlibrary.model.DLFolder;
 import com.liferay.portlet.documentlibrary.service.DLFileVersionLocalServiceUtil;
+import com.liferay.sync.SyncSiteUnavailableException;
 import com.liferay.sync.model.SyncConstants;
 import com.liferay.sync.model.SyncDLObject;
 import com.liferay.sync.model.impl.SyncDLObjectImpl;
@@ -41,6 +52,8 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+
+import java.lang.reflect.InvocationTargetException;
 
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
@@ -54,6 +67,81 @@ import java.util.Date;
  */
 public class SyncUtil {
 
+	public static String buildExceptionMessage(Throwable throwable) {
+
+		// SYNC-1253
+
+		StringBundler sb = new StringBundler(13);
+
+		if (throwable instanceof InvocationTargetException) {
+			throwable = throwable.getCause();
+		}
+
+		String throwableMessage = throwable.getMessage();
+
+		if (Validator.isNull(throwableMessage)) {
+			throwableMessage = throwable.toString();
+		}
+
+		sb.append(StringPool.QUOTE);
+		sb.append(throwableMessage);
+		sb.append(StringPool.QUOTE);
+		sb.append(StringPool.COMMA_AND_SPACE);
+		sb.append("\"error\": ");
+
+		JSONObject errorJSONObject = JSONFactoryUtil.createJSONObject();
+
+		errorJSONObject.put("message", throwableMessage);
+		errorJSONObject.put("type", ClassUtil.getClassName(throwable));
+
+		sb.append(errorJSONObject.toString());
+
+		sb.append(StringPool.COMMA_AND_SPACE);
+		sb.append("\"throwable\": \"");
+		sb.append(throwable.toString());
+		sb.append(StringPool.QUOTE);
+
+		if (throwable.getCause() == null) {
+			return StringUtil.unquote(sb.toString());
+		}
+
+		sb.append(StringPool.COMMA_AND_SPACE);
+		sb.append("\"rootCause\": ");
+
+		Throwable rootCauseThrowable = throwable;
+
+		while (rootCauseThrowable.getCause() != null) {
+			rootCauseThrowable = rootCauseThrowable.getCause();
+		}
+
+		JSONObject rootCauseJSONObject = JSONFactoryUtil.createJSONObject();
+
+		throwableMessage = rootCauseThrowable.getMessage();
+
+		if (Validator.isNull(throwableMessage)) {
+			throwableMessage = rootCauseThrowable.toString();
+		}
+
+		rootCauseJSONObject.put("message", throwableMessage);
+
+		rootCauseJSONObject.put(
+			"type", ClassUtil.getClassName(rootCauseThrowable));
+
+		sb.append(rootCauseJSONObject);
+
+		return StringUtil.unquote(sb.toString());
+	}
+
+	public static void checkSyncEnabled(long groupId)
+		throws PortalException, SystemException {
+
+		Group group = GroupLocalServiceUtil.fetchGroup(groupId);
+
+		if ((group == null) || !isSyncEnabled(group)) {
+			throw new SyncSiteUnavailableException();
+		}
+	}
+
 	public static String getChecksum(DLFileVersion dlFileVersion)
 		throws PortalException, SystemException {
 
@@ -64,7 +152,7 @@ public class SyncUtil {
 		}
 
 		return DigesterUtil.digestBase64(
-			Digester.MD5, dlFileVersion.getContentStream(false));
+			Digester.SHA_1, dlFileVersion.getContentStream(false));
 	}
 
 	public static String getChecksum(File file) throws PortalException {
@@ -79,7 +167,7 @@ public class SyncUtil {
 		try {
 			fileInputStream = new FileInputStream(file);
 
-			return DigesterUtil.digestBase64(Digester.MD5, fileInputStream);
+			return DigesterUtil.digestBase64(Digester.SHA_1, fileInputStream);
 		}
 		catch (Exception e) {
 			throw new PortalException(e);
@@ -198,6 +286,11 @@ public class SyncUtil {
 		return isSupportedFolder(dlFolder);
 	}
 
+	public static boolean isSyncEnabled(Group group) {
+		return GetterUtil.getBoolean(
+			group.getTypeSettingsProperty("syncEnabled"), true);
+	}
+
 	public static void patchFile(
 			File originalFile, File deltaFile, File patchedFile)
 		throws PortalException {
@@ -268,14 +361,27 @@ public class SyncUtil {
 			type = SyncConstants.TYPE_FILE;
 		}
 		else {
-			dlFileVersion = DLFileVersionLocalServiceUtil.getFileVersion(
-				dlFileEntry.getFileEntryId(),
-				DLFileEntryConstants.PRIVATE_WORKING_COPY_VERSION);
+			try {
+				dlFileVersion = DLFileVersionLocalServiceUtil.getFileVersion(
+					dlFileEntry.getFileEntryId(),
+					DLFileEntryConstants.PRIVATE_WORKING_COPY_VERSION);
 
-			lockExpirationDate = lock.getExpirationDate();
-			lockUserId = lock.getUserId();
-			lockUserName = lock.getUserName();
-			type = SyncConstants.TYPE_PRIVATE_WORKING_COPY;
+				lockExpirationDate = lock.getExpirationDate();
+				lockUserId = lock.getUserId();
+				lockUserName = lock.getUserName();
+				type = SyncConstants.TYPE_PRIVATE_WORKING_COPY;
+			}
+			catch (NoSuchFileVersionException nsfve) {
+
+				// Publishing a checked out file entry on a staged site will
+				// get the staged file entry's lock even though the live
+				// file entry is not checked out
+
+				dlFileVersion = DLFileVersionLocalServiceUtil.getFileVersion(
+					dlFileEntry.getFileEntryId(), dlFileEntry.getVersion());
+
+				type = SyncConstants.TYPE_FILE;
+			}
 		}
 
 		SyncDLObject syncDLObject = new SyncDLObjectImpl();
@@ -293,7 +399,14 @@ public class SyncUtil {
 		syncDLObject.setExtraSettings(dlFileVersion.getExtraSettings());
 		syncDLObject.setVersion(dlFileVersion.getVersion());
 		syncDLObject.setSize(dlFileVersion.getSize());
-		syncDLObject.setChecksum(getChecksum(dlFileVersion));
+
+		if (Validator.isNull(dlFileVersion.getChecksum())) {
+			syncDLObject.setChecksum(getChecksum(dlFileVersion));
+		}
+		else {
+			syncDLObject.setChecksum(dlFileVersion.getChecksum());
+		}
+
 		syncDLObject.setEvent(event);
 		syncDLObject.setLockExpirationDate(lockExpirationDate);
 		syncDLObject.setLockUserId(lockUserId);

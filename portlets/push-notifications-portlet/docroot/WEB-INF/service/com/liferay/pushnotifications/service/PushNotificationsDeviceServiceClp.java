@@ -17,7 +17,7 @@ package com.liferay.pushnotifications.service;
 import com.liferay.portal.service.InvokableService;
 
 /**
- * @author Silvio Santos
+ * @author Bruno Farache
  * @generated
  */
 public class PushNotificationsDeviceServiceClp
@@ -43,7 +43,7 @@ public class PushNotificationsDeviceServiceClp
 
 		_methodParameterTypes4 = new String[] { "java.lang.String" };
 
-		_methodName5 = "sendPushNotification";
+		_methodName5 = "hasPermission";
 
 		_methodParameterTypes5 = new String[] { "java.lang.String" };
 	}
@@ -173,23 +173,20 @@ public class PushNotificationsDeviceServiceClp
 	}
 
 	@Override
-	public void sendPushNotification(java.lang.String message)
-		throws com.liferay.portal.kernel.exception.PortalException,
-			com.liferay.portal.kernel.exception.SystemException {
+	public boolean hasPermission(java.lang.String actionId)
+		throws com.liferay.portal.kernel.exception.PortalException {
+		Object returnObj = null;
+
 		try {
-			_invokableService.invokeMethod(_methodName5,
-				_methodParameterTypes5,
-				new Object[] { ClpSerializer.translateInput(message) });
+			returnObj = _invokableService.invokeMethod(_methodName5,
+					_methodParameterTypes5,
+					new Object[] { ClpSerializer.translateInput(actionId) });
 		}
 		catch (Throwable t) {
 			t = ClpSerializer.translateThrowable(t);
 
 			if (t instanceof com.liferay.portal.kernel.exception.PortalException) {
 				throw (com.liferay.portal.kernel.exception.PortalException)t;
-			}
-
-			if (t instanceof com.liferay.portal.kernel.exception.SystemException) {
-				throw (com.liferay.portal.kernel.exception.SystemException)t;
 			}
 
 			if (t instanceof RuntimeException) {
@@ -200,6 +197,8 @@ public class PushNotificationsDeviceServiceClp
 					" is not a valid exception");
 			}
 		}
+
+		return ((Boolean)returnObj).booleanValue();
 	}
 
 	private InvokableService _invokableService;

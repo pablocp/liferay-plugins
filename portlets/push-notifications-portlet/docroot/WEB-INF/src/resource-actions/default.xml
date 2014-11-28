@@ -25,6 +25,7 @@
 		<permissions>
 			<supports>
 				<action-key>ADD_DEVICE</action-key>
+				<action-key>ADD_ENTRY</action-key>
 				<action-key>PERMISSIONS</action-key>
 			</supports>
 			<site-member-defaults />
